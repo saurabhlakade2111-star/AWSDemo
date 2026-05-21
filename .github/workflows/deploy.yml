@@ -20,7 +20,9 @@ jobs:
           java-version: 21
 
       - name: Build Jar
-        run: mvn clean package
+        run: |
+          cd demo
+          mvn clean package
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -35,6 +37,7 @@ jobs:
 
       - name: Build Docker Image
         run: |
+          cd demo
           docker build -t $ECR_REPOSITORY .
           docker tag $ECR_REPOSITORY:latest $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
         env:
