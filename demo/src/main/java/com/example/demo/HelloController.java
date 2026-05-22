@@ -10,4 +10,9 @@ public class HelloController {
     public String hello() {
         return "Ganesh + Shubham + Avadhut= Angar Aag";
     }
+
+    @GetMapping("/perform")
+    public String perform(){
+        return "perform operation feeling good";
+    }
 }

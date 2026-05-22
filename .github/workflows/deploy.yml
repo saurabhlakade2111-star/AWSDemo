@@ -13,20 +13,32 @@ jobs:
       IMAGE_TAG: ${{ github.run_number }}
 
     steps:
+      # -----------------------
+      # 1. Checkout code
+      # -----------------------
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      # -----------------------
+      # 2. Setup Java
+      # -----------------------
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
 
+      # -----------------------
+      # 3. Build JAR
+      # -----------------------
       - name: Build JAR
         run: |
           cd demo
-          mvn clean package
+          mvn clean package -DskipTests
 
+      # -----------------------
+      # 4. AWS Credentials
+      # -----------------------
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -34,9 +46,15 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      # -----------------------
+      # 5. Login to ECR
+      # -----------------------
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+      # -----------------------
+      # 6. Build Docker Image
+      # -----------------------
       - name: Build Docker Image
         run: |
           cd demo
@@ -47,6 +65,9 @@ jobs:
           AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
 
+      # -----------------------
+      # 7. Push Image to ECR
+      # -----------------------
       - name: Push Docker Image
         run: |
           docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
@@ -55,12 +76,24 @@ jobs:
           AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
 
+      # -----------------------
+      # 8. Install jq (IMPORTANT)
+      # -----------------------
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      # -----------------------
+      # 9. Download Task Definition
+      # -----------------------
       - name: Download Task Definition
         run: |
           aws ecs describe-task-definition \
             --task-definition springboot-task \
             --query taskDefinition > task-definition.json
 
+      # -----------------------
+      # 10. Update Task Definition with NEW IMAGE
+      # -----------------------
       - name: Update Task Definition Image
         run: |
           cat task-definition.json | \
@@ -80,17 +113,28 @@ jobs:
           AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
 
+      # -----------------------
+      # 11. Register Task Definition (CAPTURE ARN)
+      # -----------------------
       - name: Register New Task Definition
+        id: register
         run: |
-          aws ecs register-task-definition \
-            --cli-input-json file://new-task-def.json
+          TASK_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://new-task-def.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
 
+          echo "TASK_ARN=$TASK_ARN" >> $GITHUB_ENV
+
+      # -----------------------
+      # 12. Update ECS Service (USE NEW TASK)
+      # -----------------------
       - name: Update ECS Service
         run: |
           aws ecs update-service \
             --cluster $ECS_CLUSTER \
             --service $ECS_SERVICE \
-            --task-definition springboot-task
+            --task-definition $TASK_ARN
         env:
           ECS_CLUSTER: ${{ secrets.ECS_CLUSTER }}
           ECS_SERVICE: ${{ secrets.ECS_SERVICE }}
